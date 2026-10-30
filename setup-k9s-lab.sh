@@ -29,7 +29,6 @@ if ! kubectl get deployment metrics-server -n kube-system &> /dev/null; then
   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 fi
 
-# Ensure --kubelet-insecure-tls is applied (fixes bare-metal/lab cert failures)
 log "Ensuring metrics-server has --kubelet-insecure-tls configured..."
 METRICS_ARGS=$(kubectl get deployment metrics-server -n kube-system -o jsonpath='{.spec.template.spec.containers[0].args}')
 
@@ -52,7 +51,7 @@ kind: Namespace
 metadata:
   name: k9s-lab
 ---
-# Scenario 1: Heavy CPU Load (Watch resource usage & sort)
+# Scenario 1: Heavy CPU Load
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -80,7 +79,7 @@ spec:
             cpu: 600m
             memory: 128Mi
 ---
-# Scenario 2: OOMKilled Trigger (Inspect exit code 137 in k9s)
+# Scenario 2: OOMKilled Trigger
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -104,7 +103,7 @@ spec:
           limits:
             memory: 64Mi
 ---
-# Scenario 3: Application CrashLoop (Practice 'p' for previous logs)
+# Scenario 3: Application CrashLoop
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -131,7 +130,7 @@ spec:
             echo "[$(date +%T)] FATAL: Corrupted metadata journal block 0x044fa";
             exit 1;
 ---
-# Scenario 4: Broken ConfigMap / Pending Pod (Inspect Events & describe)
+# Scenario 4: Broken ConfigMap / Pending Pod
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -157,7 +156,7 @@ spec:
               name: non-existent-prod-secret
               key: token
 ---
-# Scenario 5: Healthy Baseline Traffic (Practice log tailing & exec)
+# Scenario 5: Healthy Baseline Traffic
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -183,6 +182,58 @@ spec:
           limits:
             cpu: 50m
             memory: 64Mi
+---
+# Scenario 6: ImagePullBackOff #1 - Nonexistent Tag (404 Not Found)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: err-image-nonexistent-tag
+  namespace: k9s-lab
+spec:
+  containers:
+  - name: alpine
+    image: alpine:99.99.99-nonexistent
+    imagePullPolicy: Always
+    command: ["sleep", "3600"]
+---
+# Scenario 7: ImagePullBackOff #2 - DNS / Unresolvable Registry Domain
+apiVersion: v1
+kind: Pod
+metadata:
+  name: err-image-invalid-registry
+  namespace: k9s-lab
+spec:
+  containers:
+  - name: alpine
+    image: invalid-registry.internal-lab.local/library/alpine:latest
+    imagePullPolicy: Always
+    command: ["sleep", "3600"]
+---
+# Scenario 8: ImagePullBackOff #3 - Missing Registry Auth / 401 Unauthorized
+apiVersion: v1
+kind: Pod
+metadata:
+  name: err-image-unauthorized-private
+  namespace: k9s-lab
+spec:
+  containers:
+  - name: private-app
+    image: ghcr.io/internal-enterprise-private-org/secure-alpine:latest
+    imagePullPolicy: Always
+    command: ["sleep", "3600"]
+---
+# Scenario 9: ImagePullBackOff #4 - Host Architecture Incompatibility (s390x on x86_64)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: err-image-arch-mismatch
+  namespace: k9s-lab
+spec:
+  containers:
+  - name: busybox-s390x
+    image: s390x/busybox:latest
+    imagePullPolicy: Always
+    command: ["sleep", "3600"]
 EOF
 
 # -------------------------------------------------------------
