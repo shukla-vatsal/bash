@@ -79,7 +79,7 @@ spec:
             cpu: 600m
             memory: 128Mi
 ---
-# Scenario 2: OOMKilled Trigger
+# Scenario 2: OOMKilled Trigger (Exit Code 137 - Memory Limit Exceeded)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -234,6 +234,121 @@ spec:
     image: s390x/busybox:latest
     imagePullPolicy: Always
     command: ["sleep", "3600"]
+---
+# Scenario 10: CrashLoopBackOff (Exit 1) - Missing Env Variable
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: env-var-crash-app
+  namespace: k9s-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: env-var-crash-app
+  template:
+    metadata:
+      labels:
+        app: env-var-crash-app
+    spec:
+      containers:
+      - name: worker
+        image: busybox
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            if [ -z "$REQUIRED_DB_HOST" ]; then
+              echo "FATAL: REQUIRED_DB_HOST is missing. Application cannot start."
+              exit 1
+            fi
+            sleep 3600
+---
+# Scenario 11: CrashLoopBackOff (Exit 126) - Permission Denied on Script
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: permission-denied-app
+  namespace: k9s-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: permission-denied-app
+  template:
+    metadata:
+      labels:
+        app: permission-denied-app
+    spec:
+      containers:
+      - name: worker
+        image: busybox
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "echo 'Running...'" > /tmp/script.sh
+            chmod -x /tmp/script.sh
+            echo "Attempting to execute script without permissions..."
+            /tmp/script.sh
+---
+# Scenario 12: CrashLoopBackOff (Exit 137) - Liveness Probe Failing (404)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: liveness-probe-404
+  namespace: k9s-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: liveness-probe-404
+  template:
+    metadata:
+      labels:
+        app: liveness-probe-404
+    spec:
+      containers:
+      - name: web
+        image: nginx:alpine
+        livenessProbe:
+          httpGet:
+            path: /non-existent-health-check
+            port: 80
+          initialDelaySeconds: 2
+          periodSeconds: 2
+---
+# Scenario 13: CrashLoopBackOff (Exit 137) - Liveness Probe Timeout (Delay too short)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: liveness-probe-timeout
+  namespace: k9s-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: liveness-probe-timeout
+  template:
+    metadata:
+      labels:
+        app: liveness-probe-timeout
+    spec:
+      containers:
+      - name: slow-starter
+        image: busybox
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Initializing heavy application (takes 15s)..."
+            sleep 15
+            touch /tmp/healthy
+            echo "Ready."
+            sleep 3600
+        livenessProbe:
+          exec:
+            command: ["cat", "/tmp/healthy"]
+          initialDelaySeconds: 1
+          periodSeconds: 2
+          failureThreshold: 2
 EOF
 
 # -------------------------------------------------------------
