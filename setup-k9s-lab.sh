@@ -41,6 +41,14 @@ log "Waiting for metrics-server rollout..."
 kubectl rollout status deployment/metrics-server -n kube-system --timeout=60s
 
 # -------------------------------------------------------------
+# 2.5 Prepare Node Setup for Taint Scenario
+# -------------------------------------------------------------
+TARGET_NODE=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+log "Applying test taint and label to target node '${TARGET_NODE}' for Scenario 16..."
+kubectl label node "${TARGET_NODE}" dedicated=gpu --overwrite
+kubectl taint nodes "${TARGET_NODE}" dedicated=gpu:NoSchedule --overwrite
+
+# -------------------------------------------------------------
 # 3. Deploy Multi-Scenario Lab Workloads
 # -------------------------------------------------------------
 log "Deploying k9s playground workloads to namespace 'k9s-lab'..."
@@ -349,6 +357,93 @@ spec:
           initialDelaySeconds: 1
           periodSeconds: 2
           failureThreshold: 2
+---
+# Scenario 14: Pending - Insufficient CPU
+# Root cause: Pod requests 128 cores, exceeding node allocatable capacity.
+# Fix: Edit deployment and reduce requests.cpu to an available value (e.g., 50m).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pending-insufficient-cpu
+  namespace: k9s-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pending-insufficient-cpu
+  template:
+    metadata:
+      labels:
+        app: pending-insufficient-cpu
+    spec:
+      containers:
+      - name: web
+        image: nginx:alpine
+        resources:
+          requests:
+            cpu: "128"
+            memory: 64Mi
+---
+# Scenario 15: Pending - Node Selector / Affinity Mismatch
+# Root cause: Pod specifies a nodeSelector that matches zero nodes in the cluster.
+# Fix: Add label to node: kubectl label node <node-name> disktype=super-fast-nvme
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pending-nodeselector-mismatch
+  namespace: k9s-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pending-nodeselector-mismatch
+  template:
+    metadata:
+      labels:
+        app: pending-nodeselector-mismatch
+    spec:
+      nodeSelector:
+        disktype: super-fast-nvme
+      containers:
+      - name: web
+        image: nginx:alpine
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+---
+# Scenario 16: Pending - Untolerated Node Taint
+# Root cause: Node has taint 'dedicated=gpu:NoSchedule', but pod lacks matching toleration.
+# Fix: Add toleration to spec.template.spec:
+#   tolerations:
+#   - key: "dedicated"
+#     operator: "Equal"
+#     value: "gpu"
+#     effect: "NoSchedule"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pending-taint-dedicated-gpu
+  namespace: k9s-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pending-taint-dedicated-gpu
+  template:
+    metadata:
+      labels:
+        app: pending-taint-dedicated-gpu
+    spec:
+      nodeSelector:
+        dedicated: gpu
+      containers:
+      - name: web
+        image: nginx:alpine
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
 EOF
 
 # -------------------------------------------------------------
