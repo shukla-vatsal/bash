@@ -444,6 +444,80 @@ spec:
           requests:
             cpu: 25m
             memory: 32Mi
+---
+# Scenario 17: Missing Pods - Blocked by Namespace ResourceQuota
+# Isolated in 'k9s-lab-quota' so it doesn't block Scenarios 1-16.
+# Root cause: Quota allows max 50m CPU / 64Mi RAM, but each pod requests 200m CPU / 128Mi RAM.
+# Verify: kubectl describe rs -n k9s-lab-quota
+# Fix: Increase the ResourceQuota (kubectl edit resourcequota strict-quota -n k9s-lab-quota) and nudge the deployment.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k9s-lab-quota
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: strict-quota
+  namespace: k9s-lab-quota
+spec:
+  hard:
+    requests.cpu: "50m"
+    requests.memory: "64Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quota-blocked-app
+  namespace: k9s-lab-quota
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: quota-blocked-app
+  template:
+    metadata:
+      labels:
+        app: quota-blocked-app
+    spec:
+      containers:
+      - name: web
+        image: nginx:alpine
+        resources:
+          requests:
+            cpu: 200m
+            memory: 128Mi
+          limits:
+            cpu: 400m
+            memory: 256Mi
+---
+# Scenario 18: Missing Pods - ServiceAccount Not Found
+# Root cause: Deployment references 'custom-app-sa', which does not exist in 'k9s-lab'.
+# Verify: kubectl describe rs -l app=missing-sa-app -n k9s-lab
+# Fix: kubectl create serviceaccount custom-app-sa -n k9s-lab
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: missing-sa-app
+  namespace: k9s-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: missing-sa-app
+  template:
+    metadata:
+      labels:
+        app: missing-sa-app
+    spec:
+      serviceAccountName: custom-app-sa
+      containers:
+      - name: web
+        image: nginx:alpine
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
 EOF
 
 # -------------------------------------------------------------
@@ -458,4 +532,5 @@ kubectl top nodes || true
 echo -e "\n\033[1;36m================================================================"
 echo -e " Environment Ready! Launch k9s with:"
 echo -e "   k9s -n k9s-lab"
+echo -e "   k9s -n k9s-lab-quota   (Scenario 17)"
 echo -e "================================================================\033[0m\n"
